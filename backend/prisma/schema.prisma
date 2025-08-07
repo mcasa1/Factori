@@ -1,0 +1,385 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      UserRole @default(CLIENT)
+  password  String
+  company   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  clients    Client[]
+  projects   Project[]
+  feedback   Feedback[]
+  gateChecks GateCheck[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  EXECUTIVE
+  CLIENT
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  company   String
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects Project[]
+
+  @@map("clients")
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String
+  status      ProjectStatus @default(PLANNING)
+  budget      Float
+  startDate   DateTime
+  endDate     DateTime?
+  clientId    String
+  userId      String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agents     Agent[]
+  tasks      Task[]
+  teams      Team[]
+  channels   Channel[]
+  workflows  Workflow[]
+  feedback   Feedback[]
+
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model Agent {
+  id        String      @id @default(cuid())
+  name      String
+  role      AgentRole
+  status    AgentStatus @default(IDLE)
+  capabilities Json
+  personality String
+  memory    Json
+  projectId String?
+  teamId    String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  lastActiveAt DateTime @default(now())
+
+  // Relations
+  project     Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  team        Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  assignedTasks Task[]
+  sentMessages    AgentMessage[] @relation("MessageSender")
+  receivedMessages AgentMessage[] @relation("MessageReceiver")
+  feedback   Feedback[]
+
+  @@map("agents")
+}
+
+enum AgentRole {
+  EXECUTIVE
+  PROJECT_MANAGER
+  DEVELOPER
+  TESTER
+  CREATIVE
+  ANALYST
+  COMMUNICATIONS
+  HACKER
+  RESEARCHER
+  DESIGNER
+}
+
+enum AgentStatus {
+  IDLE
+  BUSY
+  OFFLINE
+  ERROR
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  projectId String
+  leaderId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agents  Agent[]
+  leader  Agent    @relation("TeamLeader", fields: [leaderId], references: [id])
+
+  @@map("teams")
+}
+
+model Task {
+  id               String      @id @default(cuid())
+  title            String
+  description      String
+  priority         TaskPriority @default(MEDIUM)
+  status           TaskStatus   @default(PENDING)
+  assignedAgentId  String?
+  projectId        String
+  dependencies     String[]
+  estimatedDuration Int
+  actualDuration   Int?
+  dueDate          DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  completedAt      DateTime?
+  metadata         Json
+
+  // Relations
+  assignedAgent Agent    @relation(fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  feedback      Feedback[]
+
+  @@map("tasks")
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Channel {
+  id        String      @id @default(cuid())
+  name      String
+  projectId String
+  type      ChannelType @default(GENERAL)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  // Relations
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages AgentMessage[]
+  members  ChannelMember[]
+
+  @@map("channels")
+}
+
+enum ChannelType {
+  GENERAL
+  TASK_DISCUSSION
+  CLIENT_COMMUNICATION
+  AGENT_COLLABORATION
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  channelId String
+  agentId   String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  agent   Agent?  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, agentId, userId])
+  @@map("channel_members")
+}
+
+model AgentMessage {
+  id          String      @id @default(cuid())
+  senderId    String
+  receiverId  String?
+  channelId   String?
+  content     String
+  messageType MessageType @default(TEXT)
+  timestamp   DateTime    @default(now())
+  metadata    Json
+
+  // Relations
+  sender    Agent   @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver  Agent?  @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: SetNull)
+  channel   Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@map("agent_messages")
+}
+
+enum MessageType {
+  TEXT
+  TASK_UPDATE
+  STATUS_UPDATE
+  FILE
+  SYSTEM
+}
+
+model Workflow {
+  id          String        @id @default(cuid())
+  name        String
+  projectId   String
+  currentStep Int           @default(0)
+  status      WorkflowStatus @default(NOT_STARTED)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  steps   WorkflowStep[]
+
+  @@map("workflows")
+}
+
+enum WorkflowStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  PAUSED
+}
+
+model WorkflowStep {
+  id               String            @id @default(cuid())
+  name             String
+  description      String
+  agentRole        AgentRole
+  dependencies     String[]
+  estimatedDuration Int
+  actualDuration   Int?
+  status           WorkflowStepStatus @default(PENDING)
+  workflowId       String
+  metadata         Json
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  // Relations
+  workflow  Workflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  gateChecks GateCheck[]
+
+  @@map("workflow_steps")
+}
+
+enum WorkflowStepStatus {
+  PENDING
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  FAILED
+}
+
+model GateCheck {
+  id          String        @id @default(cuid())
+  name        String
+  description String
+  type        GateCheckType
+  criteria    String[]
+  automated   Boolean       @default(false)
+  required    Boolean       @default(true)
+  status      GateCheckStatus @default(PENDING)
+  reviewerId  String?
+  completedAt DateTime?
+  workflowStepId String
+  metadata    Json
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  workflowStep WorkflowStep @relation(fields: [workflowStepId], references: [id], onDelete: Cascade)
+  reviewer     User?        @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@map("gate_checks")
+}
+
+enum GateCheckType {
+  QUALITY
+  SECURITY
+  PERFORMANCE
+  COMPLIANCE
+  USER_ACCEPTANCE
+}
+
+enum GateCheckStatus {
+  PENDING
+  PASSED
+  FAILED
+  SKIPPED
+}
+
+model Feedback {
+  id            String        @id @default(cuid())
+  taskId        String?
+  workflowStepId String?
+  projectId     String
+  fromAgentId   String?
+  fromUserId    String?
+  toAgentId     String?
+  content       String
+  type          FeedbackType  @default(GENERAL)
+  priority      TaskPriority  @default(MEDIUM)
+  status        FeedbackStatus @default(OPEN)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  resolvedAt    DateTime?
+
+  // Relations
+  task         Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromAgent    Agent?   @relation("FeedbackFromAgent", fields: [fromAgentId], references: [id], onDelete: SetNull)
+  fromUser     User?    @relation(fields: [fromUserId], references: [id], onDelete: SetNull)
+  toAgent      Agent?   @relation("FeedbackToAgent", fields: [toAgentId], references: [id], onDelete: SetNull)
+
+  @@map("feedback")
+}
+
+enum FeedbackType {
+  BUG_REPORT
+  FEATURE_REQUEST
+  IMPROVEMENT
+  CRITICAL_ISSUE
+  GENERAL
+}
+
+enum FeedbackStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
